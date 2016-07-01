@@ -2,10 +2,11 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.61])
-AC_INIT([mod_auth_cas], [1.0.10], [mod-auth-cas-dev@lists.jasig.org])
+AC_INIT([mod_auth_cas], [1.1], [cas-user@apereo.org])
 AC_CONFIG_SRCDIR([Makefile.am])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
+AM_MAINTAINER_MODE([disable])
 
 AC_LIBTOOL_DLOPEN
 AC_CANONICAL_BUILD
@@ -13,7 +14,7 @@ AC_CANONICAL_HOST
 AC_GNU_SOURCE
 AC_ISC_POSIX
 
-AM_INIT_AUTOMAKE([foreign 1.7])
+AM_INIT_AUTOMAKE([foreign 1.7 subdir-objects])
 #Backward compatability, allows for silent-rules in AM<1.11
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES])
 
@@ -126,17 +127,8 @@ AS_IF(
 AC_SUBST(TEST_COVERAGE_CFLAGS)
 
 #### Find OpenSSL
-AC_MSG_CHECKING([for --with-openssl])
-AC_ARG_WITH(
-	[openssl],
-	[AS_HELP_STRING([--with-openssl],[/absolute/path/to/openssl-base])],
-	[ LDFLAGS="$LDFLAGS -L$with_openssl/lib";
-	  CPPFLAGS="$CPPFLAGS -I$with_openssl/include/";
-	  LIBS="-lssl";
-	  AC_MSG_RESULT([$with_openssl])
-	],
-	[AC_MSG_RESULT([no])]
-)
+
+AX_CHECK_OPENSSL
 
 AC_CHECK_LIB([crypto],[CRYPTO_new_ex_data], [], [AC_MSG_ERROR([OpenSSL libraries required])])
 AC_CHECK_LIB([ssl],[SSL_library_init], [], [AC_MSG_ERROR([OpenSSL libraries required])])

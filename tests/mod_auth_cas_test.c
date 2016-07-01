@@ -551,6 +551,18 @@ START_TEST(setCASCookieExpiryFiveSeconds_test) {
 }
 END_TEST
 
+START_TEST(getCASCookie_empty_test) {
+  const char *expected = "";
+  cas_dir_cfg *d = ap_get_module_config(request->per_dir_config,
+                                        &auth_cas_module);
+  /*
+   * setup request with empty cookie header
+   */
+  apr_table_set(request->headers_in, "Cookie", "");
+  fail_unless(getCASCookie(request, d->CASCookie) == NULL);
+}
+END_TEST
+
 START_TEST(removeGatewayCookie_test) {
   const char *expected = "MOD_CAS_G=TRUE;Secure;Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
   const char *ernVal;
@@ -900,6 +912,49 @@ START_TEST(isValidCASTicket_OpenSAML2_test) {
 }
 END_TEST
 
+/* Test retrieving the user(name) from the AuthenticationStatement */
+START_TEST(isValidCASTicket_username_in_AuthenticationStatement) {
+  const char *response =
+      "<?xml version='1.0' encoding='UTF-8'?>"
+      "<SOAP-ENV:Envelope xmlns:SOAP-ENV='http://schemas.xmlsoap.org/soap/envelope/'>"
+      "<SOAP-ENV:Body>"
+      "<saml1p:Response xmlns:saml1p='urn:oasis:names:tc:SAML:1.0:protocol'"
+      " IssueInstant='2011-01-01T01:01:01.001Z'"
+      " MajorVersion='1' MinorVersion='1'"
+      " Recipient='https://example.com/example_app'"
+      " ResponseID='_0123456789abcdef0123456789abcdef'>"
+      "<saml1p:Status><saml1p:StatusCode Value='saml1p:Success'/></saml1p:Status>"
+      "<saml1:Assertion xmlns:saml1='urn:oasis:names:tc:SAML:1.0:assertion'"
+      " AssertionID='_0123456789abcdef0123456789abcdef'"
+      " IssueInstant='2011-01-01T01:01:01.001Z' Issuer='localhost'"
+      " MajorVersion='1' MinorVersion='1'>"
+      "<saml1:Conditions NotBefore='2011-01-01T12:00:00.000Z' NotOnOrAfter='2011-01-01T12:01:00.000Z'>"
+      "<saml1:AudienceRestrictionCondition>"
+      "<saml1:Audience>https://example.com/example_app</saml1:Audience>"
+      "</saml1:AudienceRestrictionCondition>"
+      "</saml1:Conditions>"
+      "<saml1:AuthenticationStatement AuthenticationMethod='urn:oasis:names:tc:SAML:1.0:am:password'>"
+      "<saml1:Subject><saml1:NameIdentifier>username</saml1:NameIdentifier></saml1:Subject>"
+      "</saml1:AuthenticationStatement>"
+      "</saml1:Assertion>"
+      "</saml1p:Response>"
+      "</SOAP-ENV:Body>"
+      "</SOAP-ENV:Envelope>";
+  char *remoteUser = NULL;
+  cas_saml_attr *attrs = NULL;
+  apr_byte_t rv;
+  cas_cfg *c = ap_get_module_config(request->server->module_config,
+                                    &auth_cas_module);
+  set_curl_response(response);
+  c->CASCertificatePath = "/";
+  c->CASValidateSAML = TRUE;
+  rv = isValidCASTicket(request, c, "ST-1234", &remoteUser, &attrs);
+  fail_if(rv == FALSE);
+  fail_if(remoteUser == NULL);
+  fail_unless(strcmp(remoteUser, "username") == 0);
+}
+END_TEST
+
 START_TEST(isValidCASCookie_test) {
   fail();
 }
@@ -1005,6 +1060,7 @@ START_TEST(cas_register_hooks_test) {
 }
 END_TEST
 
+#if MODULE_MAGIC_NUMBER_MAJOR < 20120211
 START_TEST(cas_attribute_authz_test) {
   int should_fail1, should_fail2, should_succeed1, should_succeed2,
       should_succeed3, should_succeed4, should_succeed5, should_decline1,
@@ -1128,6 +1184,96 @@ START_TEST(cas_attribute_authz_test) {
               (should_decline2 == DECLINED));
 }
 END_TEST
+
+#else
+
+START_TEST(cas_attribute_authz_test) {
+  int should_fail1, should_fail2, should_fail3 ,should_fail4 ,should_fail5 ,should_fail6, should_succeed1, should_succeed2,
+      should_succeed3;
+  cas_saml_attr *attrs = NULL;
+  cas_attr_builder *builder;
+  int i;
+
+  const char *old_method;
+  int old_method_number;
+
+  /* Manually create some SAML attributes.  These attributes represent
+   * a CAS attribute payload returned by CAS.  This test will apply an
+   * authorization policy to these attributes to test its behavior.
+   */
+  struct test_data {
+      const char *const k;
+      const char *const v;
+  } test_data_list[] = {
+      {"key1", "val1"},
+      {"key1", "val2"},
+      {"key2", "val3"},
+      {"should", "succeed"},
+      {"regexAttribute", "urn:mace:example.edu:testing?placeholder=there&success=true"},
+      {0, 0} /* NULL terminator */
+  };
+
+  const char *r[] = {
+	  "hopefully:fail should:fail",
+	  "hopefully:fail should:succeed",
+	  "regexAttribute~.+:testing\?.*success=true.*",
+	  "regexAttribute~.+:testing\?.*success=TRUE.*",
+	  "regexAttribute~.+:testing\?.*(?i:success=TRUE).*",
+	  "",
+	  "novalue:",
+	  ":noattribute",
+	  "fail",
+	  NULL
+  };
+  
+  // Build a CAS attribute structure.
+  builder = cas_attr_builder_new(pool, &attrs);
+  i = 0;
+  while (1) {
+      struct test_data d = test_data_list[i];
+      if (d.v == NULL) break;
+
+      cas_attr_builder_add(builder, d.k, d.v);
+      i++;
+  }
+
+  cas_set_attributes(request, attrs);
+  
+  /* Allow these tests to pass - simulate a GET request. */
+  old_method = request->method;
+  old_method_number = request->method_number;
+  request->method = "GET";
+  request->method_number = M_GET;
+
+  should_fail1 = cas_check_authorization(request, r[0], (const void*)0);
+  should_fail2 = cas_check_authorization(request, r[3], (const void*)0);
+  should_fail3 = cas_check_authorization(request, r[5], (const void*)0);
+  should_fail4 = cas_check_authorization(request, r[6], (const void*)0);
+  should_fail5 = cas_check_authorization(request, r[7], (const void*)0);
+  should_fail6 = cas_check_authorization(request, r[8], (const void*)0);
+
+  should_succeed1 = cas_check_authorization(request, r[1], (const void*)0);
+  should_succeed2 = cas_check_authorization(request, r[2], (const void*)0);
+  should_succeed3 = cas_check_authorization(request, r[4], (const void*)0);
+
+  /* Restore the request object */
+  request->method = old_method;
+  request->method_number = old_method_number;
+
+  fail_unless((should_fail1 == AUTHZ_DENIED) &&
+              (should_fail2 == AUTHZ_DENIED) &&
+              (should_fail3 == AUTHZ_DENIED) &&
+              (should_fail4 == AUTHZ_DENIED) &&
+              (should_fail5 == AUTHZ_DENIED) &&
+              (should_fail6 == AUTHZ_DENIED) &&
+              (should_succeed1 == AUTHZ_GRANTED) &&
+              (should_succeed2 == AUTHZ_GRANTED) &&
+              (should_succeed3 == AUTHZ_GRANTED));
+}
+END_TEST
+
+#endif
+
 
 /* Generate a null-terminated string of random bytes between one and
  * length_limit characters */
@@ -1306,6 +1452,8 @@ void core_setup(void) {
 
   d_cfg = cas_create_dir_config(request->pool, NULL);
 
+  request->request_config = apr_pcalloc(request->pool,
+                                      sizeof(ap_conf_vector_t *)*kEls);  
   request->server->module_config = apr_pcalloc(request->pool,
                                                sizeof(ap_conf_vector_t *)*kEls);
   request->per_dir_config = apr_pcalloc(request->pool,
@@ -1361,6 +1509,7 @@ Suite *mod_auth_cas_suite(void) {
   tcase_add_test(tc_core, setCASCookie_test);
   tcase_add_test(tc_core, setCASCookieExpiryNow_test);
   tcase_add_test(tc_core, setCASCookieExpiryFiveSeconds_test);
+  tcase_add_test(tc_core, getCASCookie_empty_test);
   tcase_add_test(tc_core, removeGatewayCookie_test);
   tcase_add_test(tc_core, urlEncode_test);
   tcase_add_test(tc_core, readCASCacheFile_test);
@@ -1373,6 +1522,7 @@ Suite *mod_auth_cas_suite(void) {
   tcase_add_test(tc_core, getResponseFromServer_test);
   tcase_add_test(tc_core, isValidCASTicket_OpenSAML1_test);
   tcase_add_test(tc_core, isValidCASTicket_OpenSAML2_test);
+  tcase_add_test(tc_core, isValidCASTicket_username_in_AuthenticationStatement);
   tcase_add_test(tc_core, isValidCASCookie_test);
   tcase_add_test(tc_core, cas_curl_write_test);
   tcase_add_test(tc_core, cas_curl_ssl_ctx_test);
