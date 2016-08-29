@@ -199,6 +199,7 @@ void *cas_create_dir_config(apr_pool_t *pool, char *path)
 	c->CASGatewayCookie = CAS_DEFAULT_GATEWAY_COOKIE;
 	c->CASAuthNHeader = CAS_DEFAULT_AUTHN_HEADER;
 	c->CASScrubRequestHeaders = CAS_DEFAULT_SCRUB_REQUEST_HEADERS;
+	c->CASLogout = 0;
 	return(c);
 }
 
@@ -241,6 +242,8 @@ void *cas_merge_dir_config(apr_pool_t *pool, void *BASE, void *ADD)
 		 base->CASScrubRequestHeaders);
 	if(add->CASScrubRequestHeaders != NULL && apr_strnatcasecmp(add->CASScrubRequestHeaders, "Off") == 0)
 		c->CASScrubRequestHeaders = NULL;
+
+	c->CASLogout = (add->CASLogout ? 1 : 0);
 
 	return(c);
 }
@@ -887,7 +890,8 @@ char *urlEncode(const request_rec *r, const char *str,
 		escaped = FALSE;
 		for(i = 0; i < limit; i++) {
 			if(*q == charsToEncode[i]) {
-				sprintf(p, "%%%x", charsToEncode[i]);
+				//sprintf(p, "%%%x", charsToEncode[i]);
+				sprintf(p, "%%%X", charsToEncode[i]);
 				p+= 3;
 				escaped = TRUE;
 				break;
@@ -2163,6 +2167,21 @@ int cas_authenticate(request_rec *r)
 	ticket = getCASTicket(r);
 	cookieString = getCASCookie(r, (ssl ? d->CASSecureCookie : d->CASCookie));
 
+    if(d->CASLogout) {
+        if(c->CASDebug)
+            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "REMOVE CAS COOKIE");
+        //setCASCookie(r, d->CASGatewayCookie, "TRUE", ssl, CAS_SESSION_EXPIRE_COOKIE_NOW);
+        //redirectRequest(r, c);
+        /*
+        if (cookieString != NULL) {
+			setCASCookie(r, (ssl ? d->CASSecureCookie : d->CASCookie), "", ssl, CAS_SESSION_EXPIRE_COOKIE_NOW);
+        }
+        */
+        setCASCookie(r, (ssl ? d->CASSecureCookie : d->CASCookie), "", ssl, CAS_SESSION_EXPIRE_COOKIE_NOW, c->CASGatewayCookieDomain);
+        apr_table_add(r->headers_out, "Location", "https://vt.edu");
+        return HTTP_MOVED_TEMPORARILY;
+    }
+
 	// prevent infinite redirect loops by allowing subsequent authentication responses to pass through, leaving the ticket parameter intact
 	if(c->CASPreserveTicket && (ticket != NULL) && (cookieString != NULL) && ap_is_initial_req(r) && isValidCASCookie(r, c, cookieString, &remoteUser, &attrs) && (remoteUser != NULL)) {
 		cas_set_attributes(r, attrs);
@@ -2890,6 +2909,7 @@ const command_rec cas_cmds [] = {
 	AP_INIT_TAKE1("CASValidateURL", cfg_readCASParameter, (void *) cmd_validateurl, RSRC_CONF, "Define the CAS Ticket Validation URL (ex: https://login.example.com/cas/serviceValidate)"),
 	AP_INIT_TAKE1("CASProxyValidateURL", cfg_readCASParameter, (void *) cmd_proxyurl, RSRC_CONF, "Define the CAS Proxy Ticket validation URL relative to CASServer (unimplemented)"),
 	AP_INIT_TAKE1("CASValidateSAML", cfg_readCASParameter, (void *) cmd_validate_saml, RSRC_CONF, "Whether the CASLoginURL is for SAML validation (On or Off)"),
+	AP_INIT_TAKE1("CASLogout", ap_set_string_slot, (void *) APR_OFFSETOF(cas_dir_cfg, CASLogout), ACCESS_CONF|OR_AUTHCFG, ""),
 
 	/* cache options */
 	AP_INIT_TAKE1("CASCookiePath", cfg_readCASParameter, (void *) cmd_cookie_path, RSRC_CONF, "Path to store the CAS session cookies in (must end in trailing /)"),
