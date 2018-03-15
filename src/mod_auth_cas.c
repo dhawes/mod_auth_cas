@@ -1849,6 +1849,9 @@ char *getResponseFromServer (request_rec *r, cas_cfg *c, char *ticket)
 	else
 		validateURL.query = apr_psprintf(r->pool, "TARGET=%s%s", getCASService(r, c), getCASRenew(r));
 
+    if(c->CASDebug)
+        ap_log_rerror(APLOG_MARK,APLOG_DEBUG,0,r,"MOD_AUTH_CAS: validateUrl: %s", apr_uri_unparse(r->pool, &validateURL, 0));
+
 	curl_easy_setopt(curl, CURLOPT_URL, apr_uri_unparse(r->pool, &validateURL, 0));
 
 	if(curl_easy_perform(curl) != CURLE_OK) {
