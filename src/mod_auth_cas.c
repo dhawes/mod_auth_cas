@@ -1784,6 +1784,10 @@ char *getResponseFromServer (request_rec *r, cas_cfg *c, char *ticket)
 		return NULL;
 	}
 
+	if(c->CASDebug) {
+		ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "curl_easy_init() complete");
+    }
+
 	curl_easy_setopt(curl, CURLOPT_VERBOSE, 0L);
 	curl_easy_setopt(curl, CURLOPT_HEADER, 0L);
 	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
@@ -1819,6 +1823,10 @@ char *getResponseFromServer (request_rec *r, cas_cfg *c, char *ticket)
 		goto out;
 	}
 
+	if(c->CASDebug) {
+		ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "curl CA setup done");
+    }
+
 	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, "mod_auth_cas 1.0.10");
 
@@ -1849,6 +1857,10 @@ char *getResponseFromServer (request_rec *r, cas_cfg *c, char *ticket)
 		goto out;
 	}
 
+	if(c->CASDebug) {
+		ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "curl_easy_perform() done");
+    }
+
 	if(headers != NULL)
 		curl_slist_free_all(headers);
 
@@ -1859,6 +1871,9 @@ char *getResponseFromServer (request_rec *r, cas_cfg *c, char *ticket)
 
 out:
 	curl_easy_cleanup(curl);
+	if(c->CASDebug) {
+		ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "getResponseFromServer() done");
+    }
 	return rv;
 }
 
