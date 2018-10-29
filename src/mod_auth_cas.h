@@ -164,6 +164,7 @@ typedef struct cas_curl_buffer {
 	char *buf;
 	size_t written;
 	apr_pool_t *pool;
+	apr_pool_t *subpool;
 } cas_curl_buffer;
 
 typedef enum {
