@@ -312,6 +312,14 @@ Description:	mod_auth_cas will set the value of the attribute header (as describ
 		in CASAttributePrefix) to <attrvalue><CASAttributeDelimiter><attrvalue>
 		in the case of multiple attribute values.
 
+Directive: 	CASMaxResponseSize
+Default:	65536 (64 KiB)
+Description:    The maximum size of the CAS validation response in bytes.  The
+		value must be between 0 and 2147483647 inclusive.  If you run into errors during
+		validation, you may need to bump this value.  Note that increasing this value
+		does not increase memory usage, it only sets an upper limit on the CAS
+		validation response.
+
 Valid Directory/.htaccess Directives
 ------------------------------------
 Directive:	CASScope

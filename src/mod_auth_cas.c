@@ -122,6 +122,7 @@ void *cas_create_server_config(apr_pool_t *pool, server_rec *svr)
 #if MODULE_MAGIC_NUMBER_MAJOR < 20120211
 	c->CASAuthoritative = CAS_DEFAULT_AUTHORITATIVE;
 #endif
+	c->CASMaxResponseSize = CAS_DEFAULT_MAX_RESPONSE_SIZE;
 	cas_setURL(pool, &(c->CASLoginURL), CAS_DEFAULT_LOGIN_URL);
 	cas_setURL(pool, &(c->CASValidateURL), CAS_DEFAULT_VALIDATE_URL);
 	cas_setURL(pool, &(c->CASProxyValidateURL), CAS_DEFAULT_PROXY_VALIDATE_URL);
@@ -157,6 +158,7 @@ void *cas_merge_server_config(apr_pool_t *pool, void *BASE, void *ADD)
 #endif
 	c->CASAttributeDelimiter = (apr_strnatcasecmp(add->CASAttributeDelimiter, CAS_DEFAULT_ATTRIBUTE_DELIMITER) != 0 ? add->CASAttributeDelimiter : base->CASAttributeDelimiter);
 	c->CASAttributePrefix = (apr_strnatcasecmp(add->CASAttributePrefix, CAS_DEFAULT_ATTRIBUTE_PREFIX) != 0 ? add->CASAttributePrefix : base->CASAttributePrefix);
+	c->CASMaxResponseSize = (add->CASMaxResponseSize != CAS_DEFAULT_MAX_RESPONSE_SIZE ? add->CASMaxResponseSize : base->CASMaxResponseSize);
 
 	/* if add->CASLoginURL == NULL, we want to copy base -- otherwise, copy the one from add, and so on and so forth */
 	if(memcmp(&add->CASLoginURL, &test, sizeof(apr_uri_t)) == 0)
@@ -392,6 +394,13 @@ const char *cfg_readCASParameter(cmd_parms *cmd, void *cfg, const char *value)
 				return(apr_psprintf(cmd->pool, "MOD_AUTH_CAS: Invalid argument to CASAuthoritative - must be 'On' or 'Off'"));
 		break;
 #endif
+		case cmd_max_response_size:
+			i = atoi(value);
+			if(i >= 0 && i <= 2147483647)
+				c->CASMaxResponseSize = i;
+			else
+				return(apr_psprintf(cmd->pool, "MOD_AUTH_CAS: Invalid CASMaxResponseSize (%s) specified - must be between 0 and 2147483647 inclusive", value));
+		break;
 		default:
 			/* should not happen */
 			return(apr_psprintf(cmd->pool, "MOD_AUTH_CAS: invalid command '%s'", cmd->directive->directive));
@@ -1747,6 +1756,11 @@ size_t cas_curl_write(const void *ptr, size_t size, size_t nmemb, void *stream)
 	char *oldBuf = curlBuffer->buf;
 	apr_pool_t *oldPool = curlBuffer->subpool;
 
+	/* make sure the buffer is not more than CASMaxResponseSize */
+	if (curlBuffer->written + realsize > curlBuffer->maxresponse) {
+		return 0;
+	}
+
 	/* create a new pool so we can destroy the old one after copying the buffer */
 	if (apr_pool_create(&curlBuffer->subpool, curlBuffer->pool)) {
 		return 0;
@@ -1815,6 +1829,7 @@ char *getResponseFromServer (request_rec *r, cas_cfg *c, char *ticket)
 	curlBuffer.written = 0;
 	curlBuffer.pool = r->pool;
 	curlBuffer.subpool = NULL;
+	curlBuffer.maxresponse = c->CASMaxResponseSize;
 
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &curlBuffer);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, cas_curl_write);
@@ -2828,6 +2843,7 @@ const command_rec cas_cmds [] = {
 	AP_INIT_TAKE1("CASSSOEnabled", cfg_readCASParameter, (void *) cmd_sso, RSRC_CONF, "Enable or disable Single Sign Out functionality (On or Off)"),
 	AP_INIT_TAKE1("CASAttributeDelimiter", cfg_readCASParameter, (void *) cmd_attribute_delimiter, RSRC_CONF, "The delimiter to use when setting multi-valued attributes in the HTTP headers"),
 	AP_INIT_TAKE1("CASAttributePrefix", cfg_readCASParameter, (void *) cmd_attribute_prefix, RSRC_CONF, "The prefix to use when setting attributes in the HTTP headers"),
+	AP_INIT_TAKE1("CASMaxResponseSize", cfg_readCASParameter, (void *) cmd_max_response_size, RSRC_CONF, "Maximum size (in bytes) of a CAS response."),
 
 	/* ssl related options */
 	AP_INIT_TAKE1("CASValidateDepth", cfg_readCASParameter, (void *) cmd_validate_depth, RSRC_CONF, "Define the number of chained certificates required for a successful validation"),
