@@ -2129,15 +2129,12 @@ int cas_authenticate(request_rec *r)
 
 	char *newLocation = NULL;
 
-	c = ap_get_module_config(r->server->module_config, &auth_cas_module);
-	d = ap_get_module_config(r->per_dir_config, &auth_cas_module);
-
-	if(c->CASDebug)
-		ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "Entering cas_authenticate, before authenticator check()");
-
 	/* Do nothing if we are not the authenticator */
 	if(ap_auth_type(r) == NULL || apr_strnatcasecmp((const char *) ap_auth_type(r), "cas") != 0)
 		return DECLINED;
+
+	c = ap_get_module_config(r->server->module_config, &auth_cas_module);
+	d = ap_get_module_config(r->per_dir_config, &auth_cas_module);
 
 	/* Safety measure: scrub CAS user/attribute headers from the incoming request. */
 	if (ap_is_initial_req(r) && d->CASScrubRequestHeaders) {
@@ -2451,7 +2448,6 @@ authz_status cas_check_authorization(request_rec *r,
                   t);
 
 
-	//t = require_line;
 	while ((w = ap_getword_conf(r->pool, &t)) && w[0]) {
 		count_casattr++;
 		if (cas_match_attribute(w, attrs, r) == CAS_ATTR_MATCH) {
