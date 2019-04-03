@@ -2129,12 +2129,15 @@ int cas_authenticate(request_rec *r)
 
 	char *newLocation = NULL;
 
+	c = ap_get_module_config(r->server->module_config, &auth_cas_module);
+	d = ap_get_module_config(r->per_dir_config, &auth_cas_module);
+
+	if(c->CASDebug)
+		ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "Entering cas_authenticate, before authenticator check()");
+
 	/* Do nothing if we are not the authenticator */
 	if(ap_auth_type(r) == NULL || apr_strnatcasecmp((const char *) ap_auth_type(r), "cas") != 0)
 		return DECLINED;
-
-	c = ap_get_module_config(r->server->module_config, &auth_cas_module);
-	d = ap_get_module_config(r->per_dir_config, &auth_cas_module);
 
 	/* Safety measure: scrub CAS user/attribute headers from the incoming request. */
 	if (ap_is_initial_req(r) && d->CASScrubRequestHeaders) {
@@ -2422,13 +2425,33 @@ authz_status cas_check_authorization(request_rec *r,
 	const char *t, *w;
 	unsigned int count_casattr = 0;
 
+    const ap_expr_info_t *expr = parsed_require_line;
+    const char *require;
+    const char *err = NULL;
+
 	if(c->CASDebug)
 		ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
 			      "Entering cas_check_authorization.");
 
 	if(!r->user) return AUTHZ_DENIED_NO_USER;
 
-	t = require_line;
+    require = ap_expr_str_exec(r, expr, &err);
+    if (err) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, APLOGNO(02586)
+                      "cas_check_authorization: require cas-attribute: Can't evaluate expression: %s",
+                      err);
+        return AUTHZ_DENIED;
+    }
+
+    t = require;
+
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, APLOGNO(01713)
+                  "cas_check_authorization: require cas-attribute: testing for attr "
+                  "\"%s\"",
+                  t);
+
+
+	//t = require_line;
 	while ((w = ap_getword_conf(r->pool, &t)) && w[0]) {
 		count_casattr++;
 		if (cas_match_attribute(w, attrs, r) == CAS_ATTR_MATCH) {
@@ -2451,10 +2474,29 @@ authz_status cas_check_authorization(request_rec *r,
 	return AUTHZ_DENIED;
 }
 
+static const char *cas_parse_config(cmd_parms *cmd, const char *require_line,
+                                     const void **parsed_require_line)
+{
+    const char *expr_err = NULL;
+    ap_expr_info_t *expr;
+
+    expr = ap_expr_parse_cmd(cmd, require_line, AP_EXPR_FLAG_STRING_RESULT,
+            &expr_err, NULL);
+
+    if (expr_err)
+        return apr_pstrcat(cmd->temp_pool,
+                           "Cannot parse expression in require line: ",
+                           expr_err, NULL);
+
+    *parsed_require_line = expr;
+
+    return NULL;
+}
+
 static const authz_provider authz_cas_provider =
 {
 	&cas_check_authorization,
-	NULL,
+	&cas_parse_config,
 };
 
 #else
