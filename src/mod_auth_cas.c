@@ -574,9 +574,19 @@ char *getCASService(const request_rec *r, const cas_cfg *c)
 {
 	const apr_port_t port = r->connection->local_addr->port;
 	const apr_byte_t ssl = isSSL(r);
-	const apr_uri_t *root_proxy = &c->CASRootProxiedAs;
+	//const apr_uri_t *root_proxy = &c->CASRootProxiedAs;
+	apr_uri_t *root_proxy;
 	char *scheme, *port_str = "", *service;
 	apr_byte_t print_port = TRUE;
+    apr_uri_t rp;
+    //char *host = apr_psprintf(r->pool, "%s%s", "https://", (char *) apr_table_get(r->headers_in, "SERVER_NAME"));
+    char *host = r->server->server_hostname;
+
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "SERVER_NAME: %s", host);
+
+	cas_setURL(r->pool, &rp, host);
+    root_proxy = &rp;
+
 
 #ifdef APACHE2_0
 	scheme = (char *) ap_http_method(r);
@@ -2113,6 +2123,42 @@ static void set_http_headers(request_rec *r, cas_cfg *c, cas_dir_cfg *d, cas_sam
 	}
 }
 
+static void printHeaders(request_rec *r)
+{
+    int i;
+
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%s", r->server->server_hostname);
+
+    if (!apr_is_empty_table(r->headers_in)) {
+    //if (!apr_is_empty_table(r->subprocess_env)) {
+        //const apr_array_header_t *elts = apr_table_elts(r->headers_in);
+        const apr_array_header_t *elts = apr_table_elts(r->subprocess_env);
+        apr_table_entry_t *e = (apr_table_entry_t *) elts->elts;
+        for(i = 0; i < elts->nelts; i++) {
+            ap_rprintf(r, "%s: %s\n", e[i].key, e[i].val);
+            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%s: %s\n", e[i].key, e[i].val);
+        }
+        /*
+        if (!apr_is_empty_array(elts)) {
+            int i;
+            for (i = 0; i < elts->nelts; i++) {
+                const char *s = ((const char**)elts->elts)[i];
+                //printf("%d: %s\n", i, s);
+                ap_rprintf(r, "%s: %s\n", elts[i].key, elts[i].val);
+                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%d", i);
+                if (i == 2) continue;
+                if (s && isprint(s)) {
+                    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "strlen(s): %lu", strlen(s));
+                    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%d: %s", i, s);
+                }
+            }
+            //apr_array_pstrcat(r->pool, elts, '\0');
+            //ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "elts: %s", apr_array_pstrcat(r->pool, elts, ':'));
+        }
+        */
+    }
+}
+
 /* basic CAS module logic */
 int cas_authenticate(request_rec *r)
 {
@@ -2128,6 +2174,8 @@ int cas_authenticate(request_rec *r)
 	apr_byte_t printPort = FALSE;
 
 	char *newLocation = NULL;
+
+    printHeaders(r);
 
 	/* Do nothing if we are not the authenticator */
 	if(ap_auth_type(r) == NULL || apr_strnatcasecmp((const char *) ap_auth_type(r), "cas") != 0)
@@ -2215,7 +2263,11 @@ int cas_authenticate(request_rec *r)
 					printPort = TRUE;
 
 				if(c->CASRootProxiedAs.is_initialized) {
-						newLocation = apr_psprintf(r->pool, "%s%s%s%s", apr_uri_unparse(r->pool, &c->CASRootProxiedAs, 0), r->uri, ((r->args != NULL) ? "?" : ""), ((r->args != NULL) ? r->args : ""));
+                    apr_uri_t rp;
+                    //char *host = apr_psprintf(r->pool, "%s%s", "https://", (char *) apr_table_get(r->headers_in, "SERVER_NAME"));
+                    char *host = r->server->server_hostname;
+                    cas_setURL(r->pool, &rp, host);
+						newLocation = apr_psprintf(r->pool, "%s%s%s%s", apr_uri_unparse(r->pool, &rp, 0), r->uri, ((r->args != NULL) ? "?" : ""), ((r->args != NULL) ? r->args : ""));
 				} else {
 #ifdef APACHE2_0
 					if(printPort == TRUE)
@@ -2842,7 +2894,7 @@ void cas_register_hooks(apr_pool_t *p)
 #if MODULE_MAGIC_NUMBER_MAJOR >= 20120211
 	ap_hook_check_authn(
 		cas_authenticate,
-		NULL,
+        NULL,
 		NULL,
 		APR_HOOK_MIDDLE,
 		AP_AUTH_INTERNAL_PER_URI);
