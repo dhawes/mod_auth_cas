@@ -2131,13 +2131,14 @@ static void printHeaders(request_rec *r)
 
     if (!apr_is_empty_table(r->headers_in)) {
     //if (!apr_is_empty_table(r->subprocess_env)) {
-        //const apr_array_header_t *elts = apr_table_elts(r->headers_in);
-        const apr_array_header_t *elts = apr_table_elts(r->subprocess_env);
+        const apr_array_header_t *elts = apr_table_elts(r->headers_in);
         apr_table_entry_t *e = (apr_table_entry_t *) elts->elts;
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%s", "HEADERS...");
         for(i = 0; i < elts->nelts; i++) {
             ap_rprintf(r, "%s: %s\n", e[i].key, e[i].val);
             ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%s: %s\n", e[i].key, e[i].val);
         }
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%s", "HEADERS DONE.");
         /*
         if (!apr_is_empty_array(elts)) {
             int i;
@@ -2156,6 +2157,16 @@ static void printHeaders(request_rec *r)
             //ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "elts: %s", apr_array_pstrcat(r->pool, elts, ':'));
         }
         */
+    }
+    if (!apr_is_empty_table(r->subprocess_env)) {
+        const apr_array_header_t *elts = apr_table_elts(r->subprocess_env);
+        apr_table_entry_t *e = (apr_table_entry_t *) elts->elts;
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%s", "SUBPROCESS ENV...");
+        for(i = 0; i < elts->nelts; i++) {
+            ap_rprintf(r, "%s: %s\n", e[i].key, e[i].val);
+            ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%s: %s\n", e[i].key, e[i].val);
+        }
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r, "%s", "SUBPROCESS DONE.");
     }
 }
 
